@@ -27,11 +27,21 @@ export const uploadAvatar = multer({
     },
 }).single("avatar");  // Field name là "avatar"
 
+
+// Middleware cho upload ảnh sản phẩm
+export const uploadProductImageMiddleware = multer({
+    storage,
+    fileFilter,
+    limits: {
+        fileSize: 10 * 1024 * 1024,  // 10MB
+    },
+}).array("images", 10);  // Nhận mảng ảnh với key "images", tối đa 10 ảnh
+
 // Middleware xử lý lỗi multer
 export const handleMulterError = (err: any, req: Request, res: any, next: any) => {
     if (err instanceof multer.MulterError) {
         if (err.code === "LIMIT_FILE_SIZE") {
-            return res.status(400).json({ message: "File quá lớn, tối đa 5MB" });
+            return res.status(400).json({ message: "File quá lớn, tối đa 10MB" });
         }
         return res.status(400).json({ message: err.message });
     }

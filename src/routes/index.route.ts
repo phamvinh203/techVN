@@ -3,6 +3,7 @@ import { userRoutes } from "./user.route";
 import { categoriesRoutes } from "./categories.route";
 import { brandsRoutes } from "./brands.route";
 import { bannerRoutes } from "./banner.route";
+import { productsRoutes } from "./products.route";
 
 
 const mainRoutes = (app: Express): void => {
@@ -15,6 +16,8 @@ const mainRoutes = (app: Express): void => {
     app.use(`${version}/brands`, brandsRoutes);
 
     app.use(`${version}/banners`, bannerRoutes);
+
+    app.use(`${version}/products`, productsRoutes);
 
 }
 
