@@ -20,6 +20,8 @@ router.patch('/:id/status', authMiddleware, controller.statusToggleProduct);
 
 // danh sách tất cả sản phẩm với phân trang và lọc
 router.get('/', controller.getALLProducts);
+// sắp xếp sản phẩm
+router.get('/sort', controller.sortProducts);
 // sản phẩm nổi bật
 router.get('/featured/list', controller.getFeaturedProducts);
 // sản phẩm mới nhất

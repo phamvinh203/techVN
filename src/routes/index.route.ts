@@ -4,6 +4,7 @@ import { categoriesRoutes } from "./categories.route";
 import { brandsRoutes } from "./brands.route";
 import { bannerRoutes } from "./banner.route";
 import { productsRoutes } from "./products.route";
+import { searchRoutes } from "./search.route";
 
 
 const mainRoutes = (app: Express): void => {
@@ -18,6 +19,8 @@ const mainRoutes = (app: Express): void => {
     app.use(`${version}/banners`, bannerRoutes);
 
     app.use(`${version}/products`, productsRoutes);
+
+    app.use(`${version}/search`, searchRoutes);
 
 }
 

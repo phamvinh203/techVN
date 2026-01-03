@@ -551,6 +551,73 @@ export const getRelatedProducts = async (req: Request, res: Response): Promise<v
     }
 };
 
+// Sắp xếp sản phẩm
+export const sortProducts = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const {
+            sort = "newest",
+            page = 1,
+            limit = 10
+        } = req.query;
+
+        const pageNum = Number(page);
+        const limitNum = Number(limit);
+        const skip = (pageNum - 1) * limitNum;
+
+        const query: any = {
+            deleted: false,
+            status: "active"
+        };
+
+        // Build sort option
+        let sortOption: any = {};
+        switch (sort) {
+            case "price_asc":
+                sortOption = { price: 1 };
+                break;
+            case "price_desc":
+                sortOption = { price: -1 };
+                break;
+            case "newest":
+                sortOption = { createdAt: -1 };
+                break;
+            case "best_seller":
+                sortOption = { buyturn: -1 };
+                break;
+            default:
+                sortOption = { createdAt: -1 };
+        }
+
+        const [products, totalItems] = await Promise.all([
+            Product.find(query)
+                .sort(sortOption)
+                .skip(skip)
+                .limit(limitNum)
+                .populate("brand_id", "name")
+                .populate("category_id", "name"),
+            Product.countDocuments(query)
+        ]);
+
+        const totalPages = Math.ceil(totalItems / limitNum);
+
+        sendSuccess(res, {
+            message: "Sắp xếp sản phẩm thành công",
+            data: {
+                products,
+                pagination: {
+                    totalItems,
+                    totalPages,
+                    currentPage: pageNum,
+                    limit: limitNum
+                }
+            }
+        });
+    } catch (error) {
+        console.error("Error in sortProducts:", error);
+        sendError(res, 500, error instanceof Error ? `Lỗi server: ${error.message}` : "Lỗi server không xác định");
+    }
+};
+
 // API cho hình ảnh Lazy loading
 export const getProductImages = async (req: Request, res: Response): Promise<void> => {
     try {

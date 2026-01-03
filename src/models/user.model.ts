@@ -55,6 +55,18 @@ const userSchema = new mongoose.Schema(
       type: Date,
     },
 
+    searchHistory: [{
+      keyword: {
+        type: String,
+        required: true,
+        trim: true
+      },
+      timestamp: {
+        type: Date,
+        default: Date.now
+      }
+    }],
+
   },
   { timestamps: true }
 );
