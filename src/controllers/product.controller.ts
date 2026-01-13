@@ -45,6 +45,19 @@ export const createProduct = async (req: Request, res: Response): Promise<void> 
 			return;
 		}
 
+        let parsedSpecification = {};
+		if (specification !== undefined && specification !== "") {
+			if (typeof specification === 'string') {
+				try {
+					parsedSpecification = JSON.parse(specification);
+				} catch {
+					parsedSpecification = {};
+				}
+			} else {
+				parsedSpecification = specification;
+			}
+		}
+
 		const productSlug = generateUniqueSlug(name);
 		const files = (req as Request & { files?: Express.Multer.File[] }).files;
 
@@ -68,7 +81,7 @@ export const createProduct = async (req: Request, res: Response): Promise<void> 
 			oldprice: numericOldprice,
 			images: imageUrls,
 			description,
-			specification,
+			specification: parsedSpecification,
 			buyturn: 0,
 			quantity: numericQuantity,
 			slug: productSlug
@@ -175,7 +188,17 @@ export const updateProduct = async (req: Request, res: Response): Promise<void> 
             product.slug = generateUniqueSlug(name);
         }
         if (description !== undefined) product.description = description;
-        if (specification !== undefined) product.specification = specification;
+        if (specification !== undefined) {
+            if (typeof specification === 'string') {
+                try {
+                    product.specification = JSON.parse(specification);
+                } catch {
+                    product.specification = {};
+                }
+            } else {
+                product.specification = specification;
+            }
+        }
         if (brand_id && brand_id !== "" && brand_id !== "null" && brand_id !== "undefined") {
             product.brand_id = brand_id;
         } else if (brand_id === "" || brand_id === "null") {
