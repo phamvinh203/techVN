@@ -30,10 +30,10 @@ const userSchema = new mongoose.Schema(
       type: String,
     },
 
-    role_id: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Role",
-      required: true,
+    isRole: {
+      type: String,
+      enum: ["USER", "ADMIN"],
+      default: "USER",
     },
 
     refresh_token: {

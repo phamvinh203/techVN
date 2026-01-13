@@ -1,6 +1,8 @@
 import { Request, Response } from "express";
 import { sendError, sendSuccess } from "~/helpers/responese";
 import Category from "~/models/category.model";
+import Product from "~/models/product.model";
+import { generateSlug } from "~/utils/slug.util";
 
 // Lấy tất cả categories
 export const getAllCategories = async (req: Request, res: Response): Promise<void> => {
@@ -37,6 +39,37 @@ export const getCategoryById = async (req: Request, res: Response): Promise<void
     }
 };
 
+// Lấy category theo slug và các sản phẩm thuộc category
+export const getCategoryBySlug = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { slug } = req.params;
+        const category = await Category.findOne({ slug });
+        
+        if (!category) {
+            sendError(res, 404, "Không tìm thấy danh mục");
+            return;
+        }
+
+        // Lấy các sản phẩm thuộc category này
+        const products = await Product.find({ 
+            category_id: category._id,
+            deleted: false,
+            status: "active"
+        }).populate("brand_id");
+
+        sendSuccess(res, {
+            success: true,
+            data: {
+                category,
+                products
+            },
+        });
+    } catch (error) {
+        console.error("Get category by slug error:", error);
+        sendError(res, 500, "Lỗi server");
+    }
+};
+
 // Tạo category mới
 export const createCategory = async (req: Request, res: Response): Promise<void> => {
     try {
@@ -47,18 +80,19 @@ export const createCategory = async (req: Request, res: Response): Promise<void>
             return;
         }
 
+        // Tạo slug từ name nếu không cung cấp
+        const categorySlug = slug || generateSlug(name);
+
         // Kiểm tra slug đã tồn tại
-        if (slug) {
-            const existingCategory = await Category.findOne({ slug });
-            if (existingCategory) {
-                sendError(res, 400, "Slug đã tồn tại");
-                return;
-            }
+        const existingCategory = await Category.findOne({ slug: categorySlug });
+        if (existingCategory) {
+            sendError(res, 400, "Slug đã tồn tại");
+            return;
         }
 
         const newCategory = await Category.create({
             name,
-            slug: slug || name.toLowerCase().replace(/\s+/g, "-"),
+            slug: categorySlug,
         });
 
         sendSuccess(res, {
@@ -93,9 +127,17 @@ export const updateCategory = async (req: Request, res: Response): Promise<void>
             }
         }
 
+        // Tự động cập nhật slug nếu name thay đổi và không cung cấp slug mới
+        const updateData: any = { name };
+        if (slug) {
+            updateData.slug = slug;
+        } else if (name && name !== category.name) {
+            updateData.slug = generateSlug(name);
+        }
+
         const updatedCategory = await Category.findByIdAndUpdate(
             id,
-            { name, slug },
+            updateData,
             { new: true }
         );
 

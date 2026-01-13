@@ -5,7 +5,7 @@ export const createTokens = (user: any) => {
     {
       user_id: user._id,
       email: user.email,
-      role: user.role_id?.code,
+      role: user.isRole,
     },
     process.env.ACCESS_TOKEN_SECRET!,
     { expiresIn: "15m" }

@@ -28,6 +28,10 @@ router.get('/featured/list', controller.getFeaturedProducts);
 router.get('/new/list', controller.getNewProducts);
 // sản phẩm bán chạy nhất
 router.get('/top-selling/list', controller.getTopSellingProducts);
+// chi tiết sản phẩm theo slug
+router.get('/slug/:slug', controller.getProductBySlug);
+// sản phẩm theo brand slug
+router.get('/brand/:slug', controller.getProductsByBrandSlug);
 // api cho hình ảnh Lazy loading
 router.get('/:id/images', controller.getProductImages);
 // sản phẩm liên quan

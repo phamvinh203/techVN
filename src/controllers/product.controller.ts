@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import { sendError, sendSuccess } from "~/helpers/responese";
 import { uploadProductImage, removeProductImage, removeProductFolder } from "~/helpers/upload";
 import Product from "~/models/product.model";
+import Brand from "~/models/brand.model";
 import { generateUniqueSlug } from "~/utils/slug.util";
 
 // Tạo sản phẩm mới 
@@ -403,8 +404,8 @@ export const getProductById = async (req: Request, res: Response): Promise<void>
             deleted: false,
             status: "active"
         })
-        .populate("brand_id", "name")
-        .populate("category_id", "name");
+        .populate("brand_id", "name slug")
+        .populate("category_id", "name slug");
 
         if (!product) {
             sendError(res, 404, "Sản phẩm không tồn tại");
@@ -417,6 +418,122 @@ export const getProductById = async (req: Request, res: Response): Promise<void>
         });
     } catch (error) {
         console.error("Error in getProductById:", error);
+        sendError(res, 500, error instanceof Error ? `Lỗi server: ${error.message}` : "Lỗi server không xác định");
+    }
+};
+
+// Chi tiết sản phẩm theo slug
+export const getProductBySlug = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { slug } = req.params;
+
+        if (!slug) {
+            sendError(res, 400, "Slug sản phẩm là bắt buộc");
+            return;
+        }
+
+        const product = await Product.findOne({
+            slug: slug,
+            deleted: false,
+            status: "active"
+        })
+        .populate("brand_id", "name slug")
+        .populate("category_id", "name slug");
+
+        if (!product) {
+            sendError(res, 404, "Sản phẩm không tồn tại");
+            return;
+        }
+
+        sendSuccess(res, {
+            message: "Lấy chi tiết sản phẩm thành công",
+            data: product
+        });
+    } catch (error) {
+        console.error("Error in getProductBySlug:", error);
+        sendError(res, 500, error instanceof Error ? `Lỗi server: ${error.message}` : "Lỗi server không xác định");
+    }
+};
+
+// Lấy danh sách sản phẩm theo brand slug
+export const getProductsByBrandSlug = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { slug } = req.params;
+        const {
+            page = 1,
+            limit = 10,
+            sort = "newest"
+        } = req.query;
+
+        if (!slug) {
+            sendError(res, 400, "Slug brand là bắt buộc");
+            return;
+        }
+
+        // Tìm brand theo slug
+        const brand = await Brand.findOne({ slug });
+        if (!brand) {
+            sendError(res, 404, "Không tìm thấy thương hiệu");
+            return;
+        }
+
+        const pageNum = Number(page);
+        const limitNum = Number(limit);
+        const skip = (pageNum - 1) * limitNum;
+
+        // Build query
+        const query: any = {
+            brand_id: brand._id,
+            deleted: false,
+            status: "active"
+        };
+
+        // Build sort option
+        let sortOption: any = {};
+        switch (sort) {
+            case "price_asc":
+                sortOption = { price: 1 };
+                break;
+            case "price_desc":
+                sortOption = { price: -1 };
+                break;
+            case "newest":
+                sortOption = { createdAt: -1 };
+                break;
+            case "best_seller":
+                sortOption = { buyturn: -1 };
+                break;
+            default:
+                sortOption = { createdAt: -1 };
+        }
+
+        const [products, totalItems] = await Promise.all([
+            Product.find(query)
+                .sort(sortOption)
+                .skip(skip)
+                .limit(limitNum)
+                .populate("brand_id", "name slug logo")
+                .populate("category_id", "name slug"),
+            Product.countDocuments(query)
+        ]);
+
+        const totalPages = Math.ceil(totalItems / limitNum);
+
+        sendSuccess(res, {
+            message: "Lấy danh sách sản phẩm theo thương hiệu thành công",
+            data: {
+                brand,
+                products,
+                pagination: {
+                    totalItems,
+                    totalPages,
+                    currentPage: pageNum,
+                    limit: limitNum
+                }
+            }
+        });
+    } catch (error) {
+        console.error("Error in getProductsByBrandSlug:", error);
         sendError(res, 500, error instanceof Error ? `Lỗi server: ${error.message}` : "Lỗi server không xác định");
     }
 };

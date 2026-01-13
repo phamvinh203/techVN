@@ -4,11 +4,10 @@ import bcrypt from "bcrypt";
 import { sendError, sendSuccess } from "~/helpers/responese";
 import Auth from "~/models/user.model";
 import { createTokens } from "~/utils/token_manager";
-import Role from "~/models/role.model";
 import { generateOTP } from "../helpers/generate";
 import { sendMail } from "../helpers/sendMail";
 import ForgotPassword from "~/models/forgot-password.model";
-import { supabase } from "~/config/db";
+import { supabase } from "~/config/supabase.config";
 
 
 export const register = async (req: Request, res: Response): Promise<void> => {
@@ -27,22 +26,14 @@ export const register = async (req: Request, res: Response): Promise<void> => {
             return;
         }
 
-        // role_id hợp lệ
-        const userRole = await Role.findOne({ code: "USER" });
-        if (!userRole) {
-            sendError(res, 400, "Vai trò người dùng không hợp lệ");
-            return;
-        }
-
         // Mã hóa mật khẩu
         const hashedPassword = await bcrypt.hash(password, 10);
 
-        // Tạo người dùng mới
+        // Tạo người dùng mới (isRole sẽ tự động là "USER" theo default)
         const newUser = await Auth.create({
             full_name,
             email,
             password: hashedPassword,
-            role_id: userRole._id,
         })
 
         // Trả về phản hồi thành công
@@ -53,7 +44,7 @@ export const register = async (req: Request, res: Response): Promise<void> => {
                 user_id: newUser._id,
                 full_name: newUser.full_name,
                 email: newUser.email,
-                role_id: newUser.role_id,
+                isRole: newUser.isRole,
             },
         });
         
@@ -74,16 +65,14 @@ export const login = async (req: Request, res: Response): Promise<void> => {
         }
         // Tìm user
         const user = await Auth.findOne({ email })
-        .select("+password +refresh_token")
-        .populate("role_id");
+        .select("+password +refresh_token");
         if (!user) {
             sendError(res, 400, "Email hoặc mật khẩu không đúng");
             return;
         }
 
         // Kiểm tra role
-        const role = user.role_id as any;
-        if (!role || !["ADMIN", "USER"].includes(role.code)) {
+        if (!user.isRole || !["ADMIN", "USER"].includes(user.isRole)) {
             sendError(res, 403, "Tài khoản không có quyền truy cập");
             return;
         }
@@ -113,9 +102,10 @@ export const login = async (req: Request, res: Response): Promise<void> => {
             success: true,
             message: "Đăng nhập thành công",
             data: {
-                user_id: user._id,
+                _id: user._id,
+                full_name: user.full_name,
                 email: user.email,
-                role_id: user.role_id,
+                isRole: user.isRole,
                 access_token,
                 refresh_token,
             },
@@ -158,7 +148,7 @@ export const refreshToken = async (req: Request, res: Response): Promise<void> =
             {
                 user_id: decodes.user_id,
                 email: user.email,
-                role: (user.role_id as any)?.code,
+                role: user.isRole,
             },
             process.env.ACCESS_TOKEN_SECRET!,
             { expiresIn: "15m" }
@@ -460,8 +450,7 @@ export const getMe = async (req: Request & { user?: any }, res: Response): Promi
         }
 
         const user = await Auth.findOne({ _id: userId, deleted: false })
-            .select("-__v")
-            .populate("role_id", "name code");
+            .select("-__v -password");
 
         if (!user) {
             sendError(res, 404, "Người dùng không tồn tại");
@@ -481,7 +470,7 @@ export const getMe = async (req: Request & { user?: any }, res: Response): Promi
                 email: user.email,
                 phone: user.phone,
                 avatar: user.avatar,
-                role: user.role_id,
+                isRole: user.isRole,
                 status: user.status,
                 createdAt: user.createdAt,
                 updatedAt: user.updatedAt,

@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import { sendError, sendSuccess } from "~/helpers/responese";
 import Brand from "~/models/brand.model";
+import { generateSlug } from "~/utils/slug.util";
 
 // Lấy tất cả brands
 export const getAllBrands = async (req: Request, res: Response): Promise<void> => {
@@ -40,7 +41,7 @@ export const getBrandById = async (req: Request, res: Response): Promise<void> =
 // Tạo brand mới
 export const createBrand = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { name, logo } = req.body;
+        const { name, logo, slug } = req.body;
 
         if (!name) {
             sendError(res, 400, "Tên thương hiệu là bắt buộc");
@@ -54,8 +55,19 @@ export const createBrand = async (req: Request, res: Response): Promise<void> =>
             return;
         }
 
+        // Tạo slug từ name nếu không cung cấp
+        const brandSlug = slug || generateSlug(name);
+
+        // Kiểm tra slug đã tồn tại
+        const existingSlug = await Brand.findOne({ slug: brandSlug });
+        if (existingSlug) {
+            sendError(res, 400, "Slug đã tồn tại");
+            return;
+        }
+
         const newBrand = await Brand.create({
             name,
+            slug: brandSlug,
             logo,
         });
 
@@ -74,7 +86,7 @@ export const createBrand = async (req: Request, res: Response): Promise<void> =>
 export const updateBrand = async (req: Request, res: Response): Promise<void> => {
     try {
         const { id } = req.params;
-        const { name, logo } = req.body;
+        const { name, logo, slug } = req.body;
 
         const brand = await Brand.findById(id);
         if (!brand) {
@@ -91,9 +103,26 @@ export const updateBrand = async (req: Request, res: Response): Promise<void> =>
             }
         }
 
+        // Kiểm tra slug đã tồn tại (nếu có thay đổi)
+        if (slug && slug !== brand.slug) {
+            const existingSlug = await Brand.findOne({ slug });
+            if (existingSlug) {
+                sendError(res, 400, "Slug đã tồn tại");
+                return;
+            }
+        }
+
+        // Tự động cập nhật slug nếu name thay đổi và không cung cấp slug mới
+        const updateData: any = { name, logo };
+        if (slug) {
+            updateData.slug = slug;
+        } else if (name && name !== brand.name) {
+            updateData.slug = generateSlug(name);
+        }
+
         const updatedBrand = await Brand.findByIdAndUpdate(
             id,
-            { name, logo },
+            updateData,
             { new: true }
         );
 

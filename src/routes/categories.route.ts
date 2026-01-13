@@ -6,6 +6,8 @@ const router: Router = Router();
 
 // Get all categories
 router.get("/", controller.getAllCategories);
+// Get category by slug
+router.get("/slug/:slug", controller.getCategoryBySlug);
 // Chi tiết category
 router.get("/:id", controller.getCategoryById);
 

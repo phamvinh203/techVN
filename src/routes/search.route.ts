@@ -10,6 +10,9 @@ router.get('/', searchController.searchProducts);
 // Lọc sản phẩm theo giá, hãng, danh mục
 router.get('/filter', searchController.filterProducts);
 
+// sắp xếp sản phẩm
+router.get('/sort', searchController.sortProducts);
+
 // Gợi ý tìm kiếm
 router.get('/suggestions', searchController.getSearchSuggestions);
 

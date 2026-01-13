@@ -7,7 +7,7 @@ declare global {
       user?: {
         user_id: string;
         email: string;
-        role: "Admin" | "User";
+        role: "USER" | "ADMIN";
         [key: string]: any;
       };
     }
@@ -33,7 +33,7 @@ export const authMiddleware = (
     ) as {
       user_id: string;
       email: string;
-      role: "Admin" | "User";
+      role: "USER" | "ADMIN";
     };
 
     req.user = {

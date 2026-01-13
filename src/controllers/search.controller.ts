@@ -1,5 +1,7 @@
 import { Request, Response } from "express";
 import { sendError, sendSuccess } from "~/helpers/responese";
+import Brand from "~/models/brand.model";
+import Category from "~/models/category.model";
 import Product from "~/models/product.model";
 import User from "~/models/user.model";
 
@@ -59,74 +61,102 @@ export const searchProducts = async (req: Request, res: Response): Promise<void>
 
 // Lọc sản phẩm theo giá, hãng, danh mục
 export const filterProducts = async (req: Request, res: Response): Promise<void> => {
-    try {
-        const {
-            minPrice,
-            maxPrice,
-            brand_id,
-            category_id,
-            page = 1,
-            limit = 10
-        } = req.query;
+  try {
+    const {
+      minPrice,
+      maxPrice,
+      brand,        
+      category,     
+      page = 1,
+      limit = 10
+    } = req.query;
 
-        const pageNum = Number(page);
-        const limitNum = Number(limit);
-        const skip = (pageNum - 1) * limitNum;
+    const pageNum = Math.max(Number(page) || 1, 1);
+    const limitNum = Math.min(Math.max(Number(limit) || 10, 1), 50);
+    const skip = (pageNum - 1) * limitNum;
 
-        const query: any = {
-            deleted: false,
-            status: "active"
-        };
+    const query: any = {
+      deleted: false,
+      status: "active"
+    };
 
-        // Filter by price range
-        if (minPrice !== undefined || maxPrice !== undefined) {
-            query.price = {};
-            if (minPrice !== undefined) {
-                query.price.$gte = Number(minPrice);
-            }
-            if (maxPrice !== undefined) {
-                query.price.$lte = Number(maxPrice);
-            }
-        }
-
-        // Filter by brand
-        if (brand_id && typeof brand_id === "string") {
-            query.brand_id = brand_id;
-        }
-
-        // Filter by category
-        if (category_id && typeof category_id === "string") {
-            query.category_id = category_id;
-        }
-
-        const [products, totalItems] = await Promise.all([
-            Product.find(query)
-                .sort({ createdAt: -1 })
-                .skip(skip)
-                .limit(limitNum)
-                .populate("brand_id", "name")
-                .populate("category_id", "name"),
-            Product.countDocuments(query)
-        ]);
-
-        const totalPages = Math.ceil(totalItems / limitNum);
-
-        sendSuccess(res, {
-            message: "Lọc sản phẩm thành công",
-            data: {
-                products,
-                pagination: {
-                    totalItems,
-                    totalPages,
-                    currentPage: pageNum,
-                    limit: limitNum
-                }
-            }
-        });
-    } catch (error) {
-        console.error("Error in filterProducts:", error);
-        sendError(res, 500, error instanceof Error ? `Lỗi server: ${error.message}` : "Lỗi server không xác định");
+    // Filter price
+    if (minPrice || maxPrice) {
+      query.price = {};
+      if (minPrice) query.price.$gte = Number(minPrice);
+      if (maxPrice) query.price.$lte = Number(maxPrice);
     }
+
+    // Filter by brand SLUG
+    if (brand && typeof brand === "string") {
+      const brandDoc = await Brand.findOne({ slug: brand }).select("_id");
+      if (!brandDoc) {
+        sendSuccess(res, {
+          message: "Lọc sản phẩm thành công",
+          data: {
+            products: [],
+            pagination: {
+              totalItems: 0,
+              totalPages: 0,
+              currentPage: pageNum,
+              limit: limitNum
+            }
+          }
+        });
+        return;
+      }
+      query.brand_id = brandDoc._id;
+    }
+
+    // Filter by category SLUG
+    if (category && typeof category === "string") {
+      const categoryDoc = await Category.findOne({ slug: category }).select("_id");
+      if (!categoryDoc) {
+        sendSuccess(res, {
+          message: "Lọc sản phẩm thành công",
+          data: {
+            products: [],
+            pagination: {
+              totalItems: 0,
+              totalPages: 0,
+              currentPage: pageNum,
+              limit: limitNum
+            }
+          }
+        });
+        return;
+      }
+      query.category_id = categoryDoc._id;
+    }
+
+    const [products, totalItems] = await Promise.all([
+      Product.find(query)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limitNum)
+        .populate("brand_id", "name slug")
+        .populate("category_id", "name slug"),
+      Product.countDocuments(query)
+    ]);
+
+    const totalPages = Math.ceil(totalItems / limitNum);
+
+    sendSuccess(res, {
+      message: "Lọc sản phẩm thành công",
+      data: {
+        products,
+        pagination: {
+          totalItems,
+          totalPages,
+          currentPage: pageNum,
+          limit: limitNum
+        }
+      }
+    });
+  } catch (error) {
+    console.error("Error in filterProducts:", error);
+    sendError(res, 500, "Lỗi server");
+  }
 };
 
 // Sắp xếp sản phẩm
@@ -217,12 +247,16 @@ export const getSearchSuggestions = async (req: Request, res: Response): Promise
         const products = await Product.find(query)
             .sort({ buyturn: -1 })
             .limit(limitNum)
-            .select("name buyturn")
+            .select("id name slug images price buyturn")
             .lean();
 
         // Extract product names as suggestions
         const suggestions = products.map(p => ({
+            _id: p._id,
             name: p.name,
+            slug: p.slug,
+            thumbnail: p.images?.[0] || null,
+            price: p.price,
             popularity: p.buyturn || 0
         }));
 
