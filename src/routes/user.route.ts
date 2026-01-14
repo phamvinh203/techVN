@@ -29,5 +29,10 @@ router.post("/me/avatar",
 );
 router.put("/me/password", authMiddleware, controller.updatePassword);
 
+router.get("/me/address", authMiddleware, controller.getAddresses);
+router.post("/me/address/create", authMiddleware, controller.addAddress);
+router.put("/me/address/update/:id", authMiddleware, controller.updateAddress);
+router.delete("/me/address/delete/:id", authMiddleware, controller.deleteAddress);
+
 
 export const userRoutes: Router = router;

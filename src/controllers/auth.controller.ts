@@ -8,6 +8,7 @@ import { generateOTP } from "../helpers/generate";
 import { sendMail } from "../helpers/sendMail";
 import ForgotPassword from "~/models/forgot-password.model";
 import { supabase } from "~/config/supabase.config";
+import UserAddress from "~/models/userAddress.model";
 
 
 export const register = async (req: Request, res: Response): Promise<void> => {
@@ -104,6 +105,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
             data: {
                 _id: user._id,
                 full_name: user.full_name,
+                avatar: user.avatar,
                 email: user.email,
                 isRole: user.isRole,
                 access_token,
@@ -469,6 +471,8 @@ export const getMe = async (req: Request & { user?: any }, res: Response): Promi
                 full_name: user.full_name,
                 email: user.email,
                 phone: user.phone,
+                gender: user.gender,
+                birthday: user.birthday,
                 avatar: user.avatar,
                 isRole: user.isRole,
                 status: user.status,
@@ -492,10 +496,10 @@ export const updateMe = async (req: Request & { user?: any }, res: Response): Pr
             return;
         }
 
-        const { full_name, phone } = req.body;
+        const { full_name, phone, gender, birthday } = req.body;
 
         // Validate
-        if (!full_name && !phone) {
+        if (!full_name && !phone && !gender && !birthday) {
             sendError(res, 400, "Vui lòng cung cấp thông tin cần cập nhật");
             return;
         }
@@ -515,6 +519,23 @@ export const updateMe = async (req: Request & { user?: any }, res: Response): Pr
         // Cập nhật thông tin
         if (full_name) user.full_name = full_name.trim();
         if (phone) user.phone = phone.trim();
+        
+        if (gender) {
+        if (!["MALE", "FEMALE", "OTHER"].includes(gender)) {
+            sendError(res, 400, "Giới tính không hợp lệ");
+            return;
+        }
+        user.gender = gender;
+        }
+
+        if (birthday) {
+        const date = new Date(birthday);
+        if (isNaN(date.getTime())) {
+            sendError(res, 400, "Ngày sinh không hợp lệ");
+            return;
+        }
+        user.birthday = date;
+        }
 
         await user.save();
 
@@ -526,6 +547,8 @@ export const updateMe = async (req: Request & { user?: any }, res: Response): Pr
                 full_name: user.full_name,
                 email: user.email,
                 phone: user.phone,
+                gender: user.gender,
+                birthday: user.birthday,
                 avatar: user.avatar,
             },
         });
@@ -689,3 +712,248 @@ export const updatePassword = async (req: Request & { user?: any }, res: Respons
         sendError(res, 500, "Lỗi server");
     }
 };
+
+
+export const getAddresses = async (
+  req: Request & { user?: any },
+  res: Response
+): Promise<void> => {
+  try {
+    const userId = req.user?.user_id;
+
+    if (!userId) {
+      sendError(res, 401, "Unauthorized");
+      return;
+    }
+
+    const user = await Auth.findOne({ _id: userId, deleted: false });
+    if (!user) {
+      sendError(res, 404, "Người dùng không tồn tại");
+      return;
+    }
+
+    if (user.status === "BLOCKED") {
+      sendError(res, 403, "Tài khoản đã bị khóa");
+      return;
+    }
+
+    const addresses = await UserAddress.find({ user_id: userId })
+      .sort({ is_default: -1, createdAt: -1 });
+
+    sendSuccess(res, {
+      success: true,
+      data: addresses,
+    });
+  } catch (error) {
+    console.error("Get addresses error:", error);
+    sendError(res, 500, "Lỗi server");
+  }
+};
+
+export const addAddress = async (
+  req: Request & { user?: any },
+  res: Response
+): Promise<void> => {
+  try {
+    const userId = req.user?.user_id;
+    const {
+      full_name,
+      phone,
+      address,
+      ward,
+      district,
+      province,
+      is_default,
+    } = req.body;
+
+    if (!userId) {
+      sendError(res, 401, "Unauthorized");
+      return;
+    }
+
+    if (!full_name || !phone || !address) {
+      sendError(res, 400, "Vui lòng cung cấp đầy đủ thông tin địa chỉ");
+      return;
+    }
+
+    const user = await Auth.findOne({ _id: userId, deleted: false });
+    if (!user) {
+      sendError(res, 404, "Người dùng không tồn tại");
+      return;
+    }
+
+    if (user.status === "BLOCKED") {
+      sendError(res, 403, "Tài khoản đã bị khóa");
+      return;
+    }
+
+    // Nếu set default → unset default cũ
+    if (is_default) {
+      await UserAddress.updateMany(
+        { user_id: userId },
+        { is_default: false }
+      );
+    }
+
+    const newAddress = await UserAddress.create({
+      user_id: userId,
+      full_name: full_name.trim(),
+      phone: phone.trim(),
+      address: address.trim(),
+      ward,
+      district,
+      province,
+      is_default: !!is_default,
+    });
+
+    sendSuccess(res, {
+      success: true,
+      message: "Thêm địa chỉ thành công",
+      data: newAddress,
+    });
+  } catch (error) {
+    console.error("Add address error:", error);
+    sendError(res, 500, "Lỗi server");
+  }
+};
+
+export const updateAddress = async (
+  req: Request & { user?: any },
+  res: Response
+): Promise<void> => {
+  try {
+    const userId = req.user?.user_id;
+    const { id } = req.params;
+    const {
+      full_name,
+      phone,
+      address,
+      ward,
+      district,
+      province,
+      is_default,
+    } = req.body;
+
+    if (!userId) {
+      sendError(res, 401, "Unauthorized");
+      return;
+    }
+
+    if (!id) {
+      sendError(res, 400, "Thiếu id địa chỉ");
+      return;
+    }
+
+    const user = await Auth.findOne({ _id: userId, deleted: false });
+    if (!user) {
+      sendError(res, 404, "Người dùng không tồn tại");
+      return;
+    }
+
+    if (user.status === "BLOCKED") {
+      sendError(res, 403, "Tài khoản đã bị khóa");
+      return;
+    }
+
+    const addressDoc = await UserAddress.findOne({
+      _id: id,
+      user_id: userId,
+    });
+
+    if (!addressDoc) {
+      sendError(res, 404, "Địa chỉ không tồn tại");
+      return;
+    }
+
+    // Nếu set default → unset default khác
+    if (is_default === true) {
+      await UserAddress.updateMany(
+        { user_id: userId, _id: { $ne: id } },
+        { is_default: false }
+      );
+    }
+
+    // Update fields
+    if (typeof full_name === "string" && full_name.trim()) {
+      addressDoc.full_name = full_name.trim();
+    }
+
+    if (typeof phone === "string" && phone.trim()) {
+      addressDoc.phone = phone.trim();
+    }
+
+    if (typeof address === "string" && address.trim()) {
+      addressDoc.address = address.trim();
+    }
+
+    if (typeof ward === "string") addressDoc.ward = ward;
+    if (typeof district === "string") addressDoc.district = district;
+    if (typeof province === "string") addressDoc.province = province;
+
+    if (is_default !== undefined) {
+      addressDoc.is_default = Boolean(is_default);
+    }
+
+    await addressDoc.save();
+
+    sendSuccess(res, {
+      success: true,
+      message: "Cập nhật địa chỉ thành công",
+      data: addressDoc,
+    });
+  } catch (error) {
+    console.error("Update address error:", error);
+    sendError(res, 500, "Lỗi server");
+  }
+};
+
+
+export const deleteAddress = async (
+  req: Request & { user?: any },
+  res: Response
+): Promise<void> => {
+  try {
+    const userId = req.user?.user_id;
+    const { id } = req.params;
+
+    if (!userId) {
+      sendError(res, 401, "Unauthorized");
+      return;
+    }
+
+    if (!id) {
+      sendError(res, 400, "Thiếu id địa chỉ");
+      return;
+    }
+
+    const user = await Auth.findOne({ _id: userId, deleted: false });
+    if (!user) {
+      sendError(res, 404, "Người dùng không tồn tại");
+      return;
+    }
+
+    if (user.status === "BLOCKED") {
+      sendError(res, 403, "Tài khoản đã bị khóa");
+      return;
+    }
+
+    const address = await UserAddress.findOneAndDelete({
+      _id: id,
+      user_id: userId,
+    });
+
+    if (!address) {
+      sendError(res, 404, "Địa chỉ không tồn tại");
+      return;
+    }
+
+    sendSuccess(res, {
+      success: true,
+      message: "Xóa địa chỉ thành công",
+    });
+  } catch (error) {
+    console.error("Delete address error:", error);
+    sendError(res, 500, "Lỗi server");
+  }
+};
+

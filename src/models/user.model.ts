@@ -26,6 +26,20 @@ const userSchema = new mongoose.Schema(
       type: String,
     },
 
+    gender: {
+      type: String,
+      enum: ["MALE", "FEMALE", "OTHER"],
+    },
+
+    birthday: {
+      type: Date,
+    },
+
+    address: [{
+      type: String,
+      trim: true
+    }],
+
     avatar: {
       type: String,
     },
@@ -54,18 +68,6 @@ const userSchema = new mongoose.Schema(
     deletedAt: {
       type: Date,
     },
-
-    searchHistory: [{
-      keyword: {
-        type: String,
-        required: true,
-        trim: true
-      },
-      timestamp: {
-        type: Date,
-        default: Date.now
-      }
-    }],
 
   },
   { timestamps: true }

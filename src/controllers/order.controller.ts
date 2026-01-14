@@ -3,6 +3,8 @@ import { sendError, sendSuccess } from "~/helpers/responese";
 import Order from "~/models/order.model";
 import Product from "~/models/product.model";
 import Cart from "~/models/cart.model";
+import UserAddress from "~/models/userAddress.model";
+import Payment from "~/models/payment.model";
 
 // Helper function to generate unique order code
 const generateOrderCode = async (): Promise<string> => {
@@ -62,7 +64,6 @@ const validateOrderItems = async (items: any[]) => {
       name: product.name,
       quantity,
       price: product.price,
-      variant: item.variant || {},
       subtotal
     });
   }
@@ -92,55 +93,93 @@ const restoreStock = async (items: any[]) => {
 export const checkout = async (req: Request, res: Response): Promise<void> => {
   try {
     const userId = (req as any).user?.user_id;
-
     if (!userId) {
-      sendError(res, 401, "Bạn cần đăng nhập để thực hiện chức năng này");
+      sendError(res, 401, "Bạn cần đăng nhập");
       return;
     }
 
-    const { shipping_address, notes } = req.body;
+    const {
+      shipping_address_id,
+      notes,
+      payment_method = "COD",
+      items
+    } = req.body;
 
-    // Validate shipping address
-    if (!shipping_address || !shipping_address.recipient_name || !shipping_address.recipient_phone || !shipping_address.address) {
-      sendError(res, 400, "shipping_address là bắt buộc (recipient_name, recipient_phone, address)");
+    if (!Array.isArray(items) || items.length === 0) {
+      sendError(res, 400, "items là bắt buộc");
       return;
     }
 
-    // Get cart
-    const cart = await Cart.findOne({ user_id: userId }).populate("items.product_id");
+    if (!shipping_address_id) {
+      sendError(res, 400, "shipping_address_id là bắt buộc");
+      return;
+    }
+
+    // 1️⃣ Kiểm tra địa chỉ
+    const address = await UserAddress.findOne({
+      _id: shipping_address_id,
+      user_id: userId
+    });
+
+    if (!address) {
+      sendError(res, 404, "Địa chỉ giao hàng không tồn tại");
+      return;
+    }
+
+    // 2️⃣ Lấy cart
+    const cart = await Cart.findOne({ user_id: userId })
+      .populate("items.product_id");
 
     if (!cart || cart.items.length === 0) {
       sendError(res, 400, "Giỏ hàng trống");
       return;
     }
 
-    // Prepare order items from cart
-    const orderItemsData = cart.items.map((item: any) => ({
-      product_id: item.product_id._id,
-      quantity: item.quantity,
-      variant: item.variant
-    }));
+    // 3️⃣ Lấy đúng cart items được chọn
+    const selectedCartItems = cart.items.filter((cartItem: any) =>
+      items.some((i: any) => i.cart_item_id === cartItem._id.toString())
+    );
 
-    // Validate items and calculate total
-    const { validItems, totalAmount } = await validateOrderItems(orderItemsData);
+    if (selectedCartItems.length === 0) {
+      sendError(res, 400, "Không có sản phẩm hợp lệ để đặt hàng");
+      return;
+    }
 
-    // Calculate shipping fee
-    const shippingFee = totalAmount > 5000000 ? 0 : 30000;
+    // 4️⃣ Chuẩn hoá items để validate
+    const orderItemsData = selectedCartItems.map((item: any) => {
+      const reqItem = items.find(
+        (i: any) => i.cart_item_id === item._id.toString()
+      );
+
+      return {
+        product_id: item.product_id._id,
+        quantity: reqItem.quantity
+      };
+    });
+
+    // 5️⃣ Validate + tính tiền
+    const { validItems, totalAmount } =
+      await validateOrderItems(orderItemsData);
+
+    const shippingFee = totalAmount >= 5_000_000 ? 0 : 30_000;
     const finalAmount = totalAmount + shippingFee;
 
-    // Generate order code
+    // 6️⃣ Tạo Payment
+    const payment = await Payment.create({
+      method: payment_method,
+      status: "pending",
+      amount: finalAmount
+    });
+
+    // 7️⃣ Tạo Order
     const orderCode = await generateOrderCode();
 
-    // Create order
     const order = await Order.create({
       user_id: userId,
       order_code: orderCode,
       items: validItems,
-      shipping_address,
-      payment_method: {
-        type: "COD",
-        status: "pending"
-      },
+      shipping_address: address._id,
+      payment_method: payment._id,
       order_status: "pending",
       total_amount: totalAmount,
       shipping_fee: shippingFee,
@@ -148,11 +187,21 @@ export const checkout = async (req: Request, res: Response): Promise<void> => {
       notes
     });
 
-    // Deduct stock
+    // 8️⃣ Trừ kho
     await deductStock(validItems);
 
-    // Clear cart
-    (cart as any).items = [];
+    // 9️⃣ Remove ONLY ordered items from cart
+    items.forEach((i: any) => {
+      const cartItem = cart.items.id(i.cart_item_id);
+      if (!cartItem) return;
+
+      cartItem.quantity -= i.quantity;
+
+      if (cartItem.quantity <= 0) {
+        cartItem.deleteOne();
+      }
+    });
+
     await cart.save();
 
     sendSuccess(res, {
@@ -160,53 +209,75 @@ export const checkout = async (req: Request, res: Response): Promise<void> => {
       data: order
     });
   } catch (error) {
-    console.error("Error in checkout:", error);
-    sendError(res, 500, error instanceof Error ? `Lỗi server: ${error.message}` : "Lỗi server không xác định");
+    console.error("checkout error:", error);
+    sendError(res, 500, "Lỗi server");
   }
 };
+
+
+
 
 // Create Order - Tạo đơn hàng thủ công (không từ giỏ)
 export const createOrder = async (req: Request, res: Response): Promise<void> => {
   try {
     const userId = (req as any).user?.user_id;
-
     if (!userId) {
-      sendError(res, 401, "Bạn cần đăng nhập để thực hiện chức năng này");
+      sendError(res, 401, "Bạn cần đăng nhập");
       return;
     }
 
-    const { items, shipping_address, notes } = req.body;
+    const {
+      items,
+      shipping_address_id,
+      notes,
+      payment_method = "COD"
+    } = req.body;
 
-    if (!items || !Array.isArray(items) || items.length === 0) {
+    if (!Array.isArray(items) || items.length === 0) {
       sendError(res, 400, "items là bắt buộc và phải là mảng");
       return;
     }
 
-    if (!shipping_address || !shipping_address.recipient_name || !shipping_address.recipient_phone || !shipping_address.address) {
-      sendError(res, 400, "shipping_address là bắt buộc (recipient_name, recipient_phone, address)");
+    if (!shipping_address_id) {
+      sendError(res, 400, "shipping_address_id là bắt buộc");
       return;
     }
 
-    // Validate items and calculate total
+    // 1️⃣ Kiểm tra địa chỉ
+    const address = await UserAddress.findOne({
+      _id: shipping_address_id,
+      user_id: userId
+    });
+
+    if (!address) {
+      sendError(res, 404, "Địa chỉ giao hàng không tồn tại");
+      return;
+    }
+
+    // 2️⃣ Validate items + tính tiền
     const { validItems, totalAmount } = await validateOrderItems(items);
 
-    // Calculate shipping fee
-    const shippingFee = totalAmount > 5000000 ? 0 : 30000;
+    // 3️⃣ Tính phí ship
+    const shippingFee = totalAmount >= 5_000_000 ? 0 : 30_000;
     const finalAmount = totalAmount + shippingFee;
 
-    // Generate order code
+    // 4️⃣ Tạo Payment
+    const payment = await Payment.create({
+      method: payment_method, // COD | MOMO | VNPAY
+      status: "pending",
+      amount: finalAmount
+    });
+
+    // 5️⃣ Tạo mã đơn
     const orderCode = await generateOrderCode();
 
-    // Create order
+    // 6️⃣ Tạo Order
     const order = await Order.create({
       user_id: userId,
       order_code: orderCode,
       items: validItems,
-      shipping_address,
-      payment_method: {
-        type: "COD",
-        status: "pending"
-      },
+      shipping_address: address._id,
+      payment_method: payment._id,
       order_status: "pending",
       total_amount: totalAmount,
       shipping_fee: shippingFee,
@@ -214,7 +285,7 @@ export const createOrder = async (req: Request, res: Response): Promise<void> =>
       notes
     });
 
-    // Deduct stock
+    // 7️⃣ Trừ kho
     await deductStock(validItems);
 
     sendSuccess(res, {
@@ -222,10 +293,12 @@ export const createOrder = async (req: Request, res: Response): Promise<void> =>
       data: order
     });
   } catch (error) {
-    console.error("Error in createOrder:", error);
-    sendError(res, 500, error instanceof Error ? `Lỗi server: ${error.message}` : "Lỗi server không xác định");
+    console.error("createOrder error:", error);
+    sendError(res, 500, "Lỗi server");
   }
 };
+
+
 
 // Get Order By Id - Chi tiết đơn hàng
 export const getOrderById = async (req: Request, res: Response): Promise<void> => {
