@@ -23,6 +23,10 @@ const orderItemSchema = new mongoose.Schema({
   subtotal: {
     type: Number,
     required: true
+  },
+  reviewed: {
+    type: Boolean,
+    default: false
   }
 });
 

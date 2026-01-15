@@ -7,6 +7,8 @@ import { productsRoutes } from "./products.route";
 import { searchRoutes } from "./search.route";
 import { cartRoutes } from "./cart.route";
 import { ordersRoutes } from "./orders.route";
+import { reviewRoutes } from "./review.route";
+
 
 
 const mainRoutes = (app: Express): void => {
@@ -27,6 +29,8 @@ const mainRoutes = (app: Express): void => {
     app.use(`${version}/cart`, cartRoutes);
 
     app.use(`${version}/orders`, ordersRoutes);
+
+    app.use(`${version}/reviews`, reviewRoutes);
 
 }
 
