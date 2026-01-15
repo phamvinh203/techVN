@@ -42,18 +42,33 @@ const orderSchema = new mongoose.Schema(
 
     items: [orderItemSchema],
 
-    // SỬA CHỖ NÀY
+    
     shipping_address: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "UserAddress",
-      required: true
+      full_name: { type: String, required: true },
+      phone: { type: String, required: true },
+      address: { type: String, required: true },
+      ward: String,
+      district: String,
+      province: String,
     },
 
-    payment_method: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Payment",
-      required: true
+    payment: {
+      method: {
+        type: String,
+        enum: ["COD", "MOMO", "VNPAY"],
+        required: true
+      },
+      status: {
+        type: String,
+        enum: ["pending", "paid", "failed", "refunded"],
+        required: true
+      },
+      amount: {
+        type: Number,
+        required: true
+      }
     },
+
 
     order_status: {
       type: String,

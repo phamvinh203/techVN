@@ -14,11 +14,11 @@ router.get('/me', authMiddleware, orderController.getMyOrders);
 
 router.get('/:id', authMiddleware, orderController.getOrderById);
 
-router.put('/:id/cancel', authMiddleware, orderController.cancelOrder);
+router.post('/:id/cancel', authMiddleware, orderController.cancelOrder);
 
 // Admin routes
-router.get('/admin/all', authMiddleware, authorizeRoles("Admin"), orderController.getAllOrders);
+router.get('/admin/all', authMiddleware, authorizeRoles("ADMIN"), orderController.getAllOrders);
 
-router.put('/admin/:id/status', authMiddleware, authorizeRoles("Admin"), orderController.updateOrderStatus);
+router.patch('/admin/:id/status', authMiddleware, authorizeRoles("ADMIN"), orderController.updateOrderStatus);
 
 export const ordersRoutes: Router = router;

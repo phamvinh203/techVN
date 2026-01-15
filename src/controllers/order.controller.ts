@@ -90,54 +90,70 @@ const restoreStock = async (items: any[]) => {
 };
 
 // Checkout - Tạo đơn hàng từ giỏ hàng
-export const checkout = async (req: Request, res: Response): Promise<void> => {
+export const checkout = async (
+  req: Request & { user?: any },
+  res: Response
+): Promise<void> => {
   try {
-    const userId = (req as any).user?.user_id;
+    const userId = req.user?.user_id;
     if (!userId) {
       sendError(res, 401, "Bạn cần đăng nhập");
       return;
     }
-
     const {
       shipping_address_id,
       notes,
       payment_method = "COD",
-      items
+      items,
     } = req.body;
-
-    if (!Array.isArray(items) || items.length === 0) {
-      sendError(res, 400, "items là bắt buộc");
-      return;
-    }
 
     if (!shipping_address_id) {
       sendError(res, 400, "shipping_address_id là bắt buộc");
       return;
     }
 
-    // 1️⃣ Kiểm tra địa chỉ
+    if (!Array.isArray(items) || items.length === 0) {
+      sendError(res, 400, "items là bắt buộc");
+      return;
+    }
+
+
+    // LẤY & SNAPSHOT ĐỊA CHỈ
+
     const address = await UserAddress.findOne({
       _id: shipping_address_id,
-      user_id: userId
-    });
+      user_id: userId,
+    }).lean();
 
     if (!address) {
       sendError(res, 404, "Địa chỉ giao hàng không tồn tại");
       return;
     }
 
-    // 2️⃣ Lấy cart
-    const cart = await Cart.findOne({ user_id: userId })
-      .populate("items.product_id");
+    const shippingAddressSnapshot = {
+      full_name: address.full_name,
+      phone: address.phone,
+      address: address.address,
+      ward: address.ward,
+      district: address.district,
+      province: address.province,
+    };
+
+    // LẤY CART
+    const cart = await Cart.findOne({ user_id: userId }).populate(
+      "items.product_id"
+    );
 
     if (!cart || cart.items.length === 0) {
       sendError(res, 400, "Giỏ hàng trống");
       return;
     }
 
-    // 3️⃣ Lấy đúng cart items được chọn
+    // LẤY CART ITEMS ĐƯỢC CHỌN
     const selectedCartItems = cart.items.filter((cartItem: any) =>
-      items.some((i: any) => i.cart_item_id === cartItem._id.toString())
+      items.some(
+        (i: any) => i.cart_item_id === cartItem._id.toString()
+      )
     );
 
     if (selectedCartItems.length === 0) {
@@ -145,7 +161,7 @@ export const checkout = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // 4️⃣ Chuẩn hoá items để validate
+    // CHUẨN BỊ DỮ LIỆU ORDER ITEMS
     const orderItemsData = selectedCartItems.map((item: any) => {
       const reqItem = items.find(
         (i: any) => i.cart_item_id === item._id.toString()
@@ -153,50 +169,58 @@ export const checkout = async (req: Request, res: Response): Promise<void> => {
 
       return {
         product_id: item.product_id._id,
-        quantity: reqItem.quantity
+        quantity: reqItem.quantity,
       };
     });
 
-    // 5️⃣ Validate + tính tiền
+    // tính tiền và phí ship
     const { validItems, totalAmount } =
       await validateOrderItems(orderItemsData);
 
     const shippingFee = totalAmount >= 5_000_000 ? 0 : 30_000;
     const finalAmount = totalAmount + shippingFee;
 
-    // 6️⃣ Tạo Payment
+    // TẠO PAYMENT
     const payment = await Payment.create({
       method: payment_method,
       status: "pending",
-      amount: finalAmount
+      amount: finalAmount,
     });
 
-    // 7️⃣ Tạo Order
+    // TẠO mã ORDER
     const orderCode = await generateOrderCode();
 
+    // TẠO ORDER
     const order = await Order.create({
       user_id: userId,
       order_code: orderCode,
       items: validItems,
-      shipping_address: address._id,
-      payment_method: payment._id,
+
+      shipping_address: shippingAddressSnapshot,
+
+      payment: {
+        method: payment.method,
+        status: payment.status,
+        amount: payment.amount
+      },
       order_status: "pending",
       total_amount: totalAmount,
       shipping_fee: shippingFee,
       final_amount: finalAmount,
-      notes
+      notes,
     });
 
-    // 8️⃣ Trừ kho
+  //  trừ kho
     await deductStock(validItems);
 
-    // 9️⃣ Remove ONLY ordered items from cart
+
+    // XOÁ / GIẢM CART ITEMS
+
     items.forEach((i: any) => {
       const cartItem = cart.items.id(i.cart_item_id);
       if (!cartItem) return;
 
       cartItem.quantity -= i.quantity;
-
       if (cartItem.quantity <= 0) {
         cartItem.deleteOne();
       }
@@ -206,7 +230,7 @@ export const checkout = async (req: Request, res: Response): Promise<void> => {
 
     sendSuccess(res, {
       message: "Đặt hàng thành công",
-      data: order
+      data: order,
     });
   } catch (error) {
     console.error("checkout error:", error);
@@ -299,44 +323,6 @@ export const createOrder = async (req: Request, res: Response): Promise<void> =>
 };
 
 
-
-// Get Order By Id - Chi tiết đơn hàng
-export const getOrderById = async (req: Request, res: Response): Promise<void> => {
-  try {
-    const userId = (req as any).user?.user_id;
-    const userRole = (req as any).user?.role;
-    const { id } = req.params;
-
-    if (!userId) {
-      sendError(res, 401, "Bạn cần đăng nhập để thực hiện chức năng này");
-      return;
-    }
-
-    const order = await Order.findById(id)
-      .populate("user_id", "full_name email phone")
-      .populate("items.product_id", "name images");
-
-    if (!order) {
-      sendError(res, 404, "Đơn hàng không tồn tại");
-      return;
-    }
-
-    // Check permission: user can only see their own orders, admin can see all
-    if (userRole !== "Admin" && order.user_id._id.toString() !== userId) {
-      sendError(res, 403, "Bạn không có quyền xem đơn hàng này");
-      return;
-    }
-
-    sendSuccess(res, {
-      message: "Lấy chi tiết đơn hàng thành công",
-      data: order
-    });
-  } catch (error) {
-    console.error("Error in getOrderById:", error);
-    sendError(res, 500, error instanceof Error ? `Lỗi server: ${error.message}` : "Lỗi server không xác định");
-  }
-};
-
 // Get My Orders - Lịch sử mua hàng
 export const getMyOrders = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -390,6 +376,43 @@ export const getMyOrders = async (req: Request, res: Response): Promise<void> =>
     });
   } catch (error) {
     console.error("Error in getMyOrders:", error);
+    sendError(res, 500, error instanceof Error ? `Lỗi server: ${error.message}` : "Lỗi server không xác định");
+  }
+};
+
+// Get Order By Id - Chi tiết đơn hàng
+export const getOrderById = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = (req as any).user?.user_id;
+    const userRole = (req as any).user?.role;
+    const { id } = req.params;
+
+    if (!userId) {
+      sendError(res, 401, "Bạn cần đăng nhập để thực hiện chức năng này");
+      return;
+    }
+
+    const order = await Order.findById(id)
+      .populate("user_id", "full_name email phone")
+      .populate("items.product_id", "name images");
+
+    if (!order) {
+      sendError(res, 404, "Đơn hàng không tồn tại");
+      return;
+    }
+
+    // Check permission: user can only see their own orders, admin can see all
+    // if (userRole !== "Admin" && order.user_id._id.toString() !== userId) {
+    //   sendError(res, 403, "Bạn không có quyền xem đơn hàng này");
+    //   return;
+    // }
+
+    sendSuccess(res, {
+      message: "Lấy chi tiết đơn hàng thành công",
+      data: order
+    });
+  } catch (error) {
+    console.error("Error in getOrderById:", error);
     sendError(res, 500, error instanceof Error ? `Lỗi server: ${error.message}` : "Lỗi server không xác định");
   }
 };
@@ -533,65 +556,91 @@ export const getAllOrders = async (req: Request, res: Response): Promise<void> =
 };
 
 // Update Order Status (Admin) - Cập nhật trạng thái đơn hàng
-export const updateOrderStatus = async (req: Request, res: Response): Promise<void> => {
+
+export const updateOrderStatus = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
   try {
     const { id } = req.params;
     const { status } = req.body;
 
-    if (!status) {
-      sendError(res, 400, "status là bắt buộc");
-      return;
-    }
+    const validStatuses = [
+      "pending",
+      "confirmed",
+      "shipping",
+      "delivered",
+      "cancelled"
+    ];
 
-    const validStatuses = ["pending", "confirmed", "shipping", "delivered", "cancelled"];
     if (!validStatuses.includes(status)) {
       sendError(res, 400, "Trạng thái không hợp lệ");
       return;
     }
 
     const order = await Order.findById(id);
-
     if (!order) {
       sendError(res, 404, "Đơn hàng không tồn tại");
       return;
     }
 
-    // Validate status transitions
-    const currentStatus = order.order_status;
+    //Validate luồng trạng thái
     const validTransitions: Record<string, string[]> = {
       pending: ["confirmed", "cancelled"],
       confirmed: ["shipping", "cancelled"],
-      shipping: ["delivered", "cancelled"],
+      shipping: ["delivered"],
       delivered: [],
       cancelled: []
     };
 
-    if (!validTransitions[currentStatus].includes(status)) {
-      sendError(res, 400, `Không thể chuyển từ trạng thái ${currentStatus} sang ${status}`);
+    if (!validTransitions[order.order_status].includes(status)) {
+      sendError(res, 400, "Không hợp lệ luồng trạng thái");
       return;
     }
 
-    // Update status
     order.order_status = status;
 
-    // Update additional fields based on status
+    // Giao hàng thành công
     if (status === "delivered") {
       order.delivered_at = new Date();
-      order.payment_method.status = "paid";
-    } else if (status === "cancelled") {
+
+      // COD: chỉ khi delivered mới paid
+      if (order.payment?.method === "COD") {
+        order.payment.status = "paid";
+        // order.payment.paid_at = new Date();
+      }
+    }
+
+    // Huỷ đơn
+    if (status === "cancelled") {
       order.cancelled_at = new Date();
-      // Restore stock if not already done
+
+      // Restore stock
       await restoreStock(order.items);
+
+      // COD chưa giao → payment failed
+      if (
+        order.payment?.method === "COD" &&
+        order.payment.status === "pending"
+      ) {
+        order.payment.status = "failed";
+      }
     }
 
     await order.save();
 
+    const populatedOrder = await Order.findById(order._id)
+      .populate("items.product_id", "name images");
+
     sendSuccess(res, {
       message: "Cập nhật trạng thái đơn hàng thành công",
-      data: order
+      data: populatedOrder
     });
+
   } catch (error) {
-    console.error("Error in updateOrderStatus:", error);
-    sendError(res, 500, error instanceof Error ? `Lỗi server: ${error.message}` : "Lỗi server không xác định");
+    console.error("updateOrderStatus error:", error);
+    sendError(res, 500, "Lỗi server");
   }
 };
+
+
