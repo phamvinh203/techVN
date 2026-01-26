@@ -7,6 +7,8 @@ import mainRoutes from "./routes/index.route";
 
 dotenv.config();
 
+
+
 database.connect();
 
 const app: Express = express();
