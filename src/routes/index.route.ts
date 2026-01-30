@@ -8,6 +8,8 @@ import { searchRoutes } from "./search.route";
 import { cartRoutes } from "./cart.route";
 import { ordersRoutes } from "./orders.route";
 import { reviewRoutes } from "./review.route";
+import chatRouters from "./chat.route";
+
 
 
 
@@ -31,6 +33,8 @@ const mainRoutes = (app: Express): void => {
     app.use(`${version}/orders`, ordersRoutes);
 
     app.use(`${version}/reviews`, reviewRoutes);
+
+    app.use(`${version}/chat`, chatRouters);
 
 }
 
