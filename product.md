@@ -1,156 +1,90 @@
-Viết API getALLProducts.
+Bạn là Senior Backend Engineer (Node.js + TypeScript + Express + MongoDB/Mongoose). 
+Hãy đọc toàn bộ code backend chatbot hiện tại (các file sau) và triển khai thay đổi theo yêu cầu.
 
-Query params:
-- page (number, default = 1)
-- limit (number, default = 10)
-- keyword (string, optional)
-- category_id (ObjectId, optional)
-- brand_id (ObjectId, optional)
-- minPrice (number, optional)
-- maxPrice (number, optional)
-- sort (string: price_asc | price_desc | newest | best_seller)
+FILES:
+- chat.controller.ts
+- chat.service.ts
+- filter.service.ts
+- prompt.service.ts
+- cache.service.ts
+- product.model.ts
+- chat-session.model.ts
+- chat.route.ts
+- gemini.ts
+- analytics.service.ts
 
-Xử lý:
-- Chỉ lấy product:
-  deleted = false
-  status = "active"
-- Nếu keyword:
-  search theo name (regex, không phân biệt hoa thường)
-- Lọc theo category_id, brand_id
-- Lọc theo price (minPrice, maxPrice)
-- Sort:
-  - price tăng / giảm
-  - mới nhất (createdAt desc)
-  - bán chạy (buyturn desc)
-- Phân trang bằng skip & limit
+MỤC TIÊU CHÍNH (BẮT BUỘC):
+1) Khi client hỏi kiểu “cho tôi cấu hình/thông số/spec của chiếc <tên sản phẩm>”, 
+   backend phải:
+   - Tìm đúng sản phẩm được nhắc đến (exact-ish match theo name/slug).
+   - Ưu tiên sản phẩm đó trong prompt (chỉ 1 sản phẩm là đủ cho câu hỏi cấu hình).
+   - Trả về response JSON kèm thông tin `product` (để client hiển thị card) cùng `reply`.
 
-Response:
-- 200 OK
-- Trả về:
-  products[]
-  totalItems
-  totalPages
-  currentPage
+2) Giảm danh sách sản phẩm đưa vào prompt:
+   - Mặc định: chỉ top 3–5 sản phẩm phù hợp nhất (ranking/scoring).
+   - Nếu đã match rõ 1 sản phẩm được nhắc tên: chỉ đưa 1 sản phẩm (hoặc 1 + 2 sản phẩm tương tự nếu cần).
+   - Không bao giờ đưa 15 sản phẩm vào prompt cho một câu hỏi.
 
+3) Chống trả lời sai dữ liệu:
+   - Không bịa spec/giá/feature nếu trong product.specification hoặc description không có.
+   - Nếu thiếu field, nói “chưa có thông tin” thay vì tự đoán.
 
-Viết API getProductById.
+THAY ĐỔI CỤ THỂ CẦN THỰC HIỆN (IMPLEMENT):
+A) filter.service.ts
+   - Thêm hàm nhận biết “user đang hỏi cấu hình/specific product”:
+     + extract tên sản phẩm từ message (các pattern: “cấu hình”, “thông số”, “spec”, “chi tiết”, “review nhanh”…)
+     + normalize tiếng Việt (bỏ dấu, lower, bỏ ký tự thừa)
+     + tìm best match trong products theo name/slug bằng scoring (exact/contains/token overlap)
+     + đặt ngưỡng để tránh match bừa (vd >= 70)
+   - Export hàm findMentionedProduct(products, userMessage) -> product | null
 
-Params:
-- id (productId)
+B) chat.service.ts
+   - Đổi kiểu return từ string sang object:
+     type ChatbotResult = { reply: string; product?: ProductForChat | null; products?: ProductForChat[] }
+   - Flow mới:
+     1) Load products từ cache
+     2) mentioned = findMentionedProduct(...)
+     3) Nếu mentioned != null:
+        relevantProducts = [mentioned]
+        selectedProduct = mentioned
+        log “Matched product: <name>”
+     4) Nếu mentioned == null:
+        relevantProducts = rank/filter rồi slice top 3–5
+     5) Build prompt:
+        - Nếu selectedProduct: add block “SẢN PHẨM ĐƯỢC CHỌN”
+        - Else: “DANH SÁCH SẢN PHẨM LIÊN QUAN (TOP N)”
+     6) Call Gemini
+     7) Save session (giữ logic hiện tại)
+     8) Return { reply, product: selectedProduct ?? null }
 
-Xử lý:
-- Validate ObjectId
-- Lấy product theo _id
-- Chỉ lấy nếu:
-  deleted = false
-  status = "active"
-- Populate:
-  brand_id
-  category_id
-- Nếu không tồn tại → 404
+C) prompt.service.ts
+   - Thêm rules:
+     - Nếu có “SẢN PHẨM ĐƯỢC CHỌN”, bắt buộc trả lời dựa vào nó, không được thay bằng sản phẩm khác.
+     - Không bịa thông số; thiếu thì nói “chưa có thông tin”.
+     - Giới hạn list sản phẩm: tối đa 5.
+   - Prompt phải ngắn gọn, tránh token dư.
 
-Response:
-- 200 OK + product
-- 404 nếu không tìm thấy
+D) chat.controller.ts
+   - Response JSON phải trả kèm product khi có:
+     data: {
+       reply,
+       product: { id, name, slug, price, oldprice, images, specification, quantity, buyturn, ... } | null,
+       sessionId,
+       historyLength
+     }
+   - Không đổi route/payload đầu vào (giữ {message, sessionId})
 
-Viết API getFeaturedProducts.
+RÀNG BUỘC:
+- Không sử dụng field không tồn tại trong product schema.
+- Không đổi API input contract.
+- Code phải compile TypeScript.
+- Comment tiếng Việt ở đoạn matching/ranking quan trọng.
+- Nếu cần tạo file mới (types/productForChat.ts hoặc utils/normalize.ts), hãy tạo và cập nhật import rõ ràng.
 
-Query params:
-- limit (number, default = 8)
+OUTPUT BẮT BUỘC:
+1) Tóm tắt thay đổi 8–12 dòng (những gì đã làm).
+2) Patch theo từng file (✅ filename.ts) và đưa NỘI DUNG FILE HOÀN CHỈNH sau khi sửa.
+3) 5 test case (input JSON -> expected: reply + product present/absent + number of products in prompt).
 
-Xử lý:
-- Lấy product:
-  deleted = false
-  status = "active"
-- Sắp xếp theo:
-  buyturn desc
-- Giới hạn số lượng theo limit
-
-Response:
-- 200 OK
-- Trả về danh sách sản phẩm nổi bật
-
-
-Viết API getNewProducts.
-
-Query params:
-- limit (number, default = 8)
-
-Xử lý:
-- Lấy product:
-  deleted = false
-  status = "active"
-- Sort:
-  createdAt desc
-- Limit theo query
-
-Response:
-- 200 OK
-- Danh sách sản phẩm mới nhất
-
-
-Viết API getTopSellingProducts.
-
-Query params:
-- limit (number, default = 8)
-
-Xử lý:
-- Lấy product:
-  deleted = false
-  status = "active"
-- Sort:
-  buyturn desc
-- Limit theo query
-
-Response:
-- 200 OK
-- Danh sách sản phẩm bán chạy
-
-
-Viết API getRelatedProducts.
-
-Params:
-- id (productId hiện tại)
-
-Query params:
-- limit (number, default = 4)
-
-Xử lý:
-- Lấy product hiện tại theo id
-- Nếu không tồn tại → 404
-- Tìm các product khác:
-  - Cùng category_id hoặc brand_id
-  - _id != product hiện tại
-  - deleted = false
-  - status = "active"
-- Sort:
-  createdAt desc
-- Limit theo query
-
-Response:
-- 200 OK
-- Danh sách sản phẩm liên quan
-
-
-Viết API getProductImages.
-
-Query params:
-- page (number, default = 1)
-- limit (number, default = 10)
-
-Xử lý:
-- Chỉ select:
-  _id
-  image
-- Lấy product:
-  deleted = false
-  status = "active"
-  image != null
-- Phân trang
-
-Response:
-- 200 OK
-- Trả về:
-  images: [{ _id, image }]
-  currentPage
-  totalPages
+BẮT ĐẦU:
+Hãy đọc code hiện tại, sau đó thực hiện thay đổi và xuất patch đúng format.

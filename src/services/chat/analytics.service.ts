@@ -1,5 +1,4 @@
-import { ProductLean } from "../product.service";
-
+import { ProductForChat } from "./types";
 
 type AnalyticsLog = {
   timestamp: Date;
@@ -9,9 +8,8 @@ type AnalyticsLog = {
   products_count: number;
 };
 
-function toIdString(p: any): string {
-  // Mongo lean object thường có _id
-  const id = p?._id ?? p?.id;
+function toIdString(p: ProductForChat): string {
+  const id = (p as any)?._id;
   if (!id) return "";
   try {
     return typeof id === "string" ? id : String(id);
@@ -20,15 +18,23 @@ function toIdString(p: any): string {
   }
 }
 
+function maskPII(text: string): string {
+  const maskedEmail = text.replace(
+    /([a-zA-Z0-9._%+-])([a-zA-Z0-9._%+-]*)(@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/g,
+    (_match, first, middle, domain) => `${first}${middle ? "***" : ""}${domain}`
+  );
+  const maskedPhone = maskedEmail.replace(
+    /(\+?\d{1,2}\s?)?(\d{3})(\d{3})(\d{3,4})/g,
+    (_match, _c, a, b, c) => `${a}***${b}***${c.slice(-2)}`
+  );
+  return maskedPhone;
+}
+
 const analyticsService = {
-  /**
-   * Log interaction cho analytics
-   * (hiện tại: console.log; sau này có thể lưu DB)
-   */
   async logInteraction(
     userMessage: string,
     botResponse: string,
-    relevantProducts: ProductLean[]
+    relevantProducts: ProductForChat[]
   ): Promise<void> {
     try {
       const productsShown = (relevantProducts || [])
@@ -37,21 +43,16 @@ const analyticsService = {
 
       const logData: AnalyticsLog = {
         timestamp: new Date(),
-        user_message: userMessage,
-        bot_response: botResponse,
+        user_message: maskPII(userMessage).slice(0, 400),
+        bot_response: botResponse.slice(0, 500),
         products_shown: productsShown,
         products_count: productsShown.length,
       };
 
       console.log("📊 Analytics:", logData);
-
-      // TODO: Lưu vào database nếu bạn muốn
-      // Ví dụ (Mongo):
-      // await ChatLog.create(logData);
-
+      // TODO: persist to DB if needed
     } catch (error) {
       console.error("Analytics error:", error);
-      // Không throw error để không ảnh hưởng trải nghiệm chat
     }
   },
 };
