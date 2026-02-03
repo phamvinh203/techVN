@@ -1,19 +1,21 @@
 import Product from "~/models/product.model";
 
 
+type PopulatedRef = { _id: unknown; name?: string; slug?: string } | null | undefined;
+
 export type ProductLean = {
-  _id: any;
+  _id: unknown;
   name: string;
   slug?: string;
   price: number;
   oldprice?: number;
   images?: string[];
   description?: string;
-  specification?: any;
+  specification?: Record<string, unknown> | string | null;
   buyturn?: number;
   quantity?: number;
-  brand_id?: any;     // ObjectId hoặc populated { _id, name, slug? }
-  category_id?: any;  // ObjectId hoặc populated { _id, name, slug? }
+  brand_id?: PopulatedRef;
+  category_id?: PopulatedRef;
   status?: "active" | "inactive";
   deleted?: boolean;
   createdAt?: Date;

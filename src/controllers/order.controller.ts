@@ -356,7 +356,7 @@ export const getMyOrders = async (req: Request, res: Response): Promise<void> =>
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limitNum)
-        .populate("items.product_id", "name images"),
+        .populate("items.product_id", "name slug images"),
       Order.countDocuments(query)
     ]);
 
@@ -422,7 +422,7 @@ export const cancelOrder = async (req: Request, res: Response): Promise<void> =>
   try {
     const userId = (req as any).user?.user_id;
     const { id } = req.params;
-    const { cancelled_reason } = req.body;
+    const { cancelled_reason } = req.body || {};
 
     if (!userId) {
       sendError(res, 401, "Bạn cần đăng nhập để thực hiện chức năng này");
@@ -430,7 +430,6 @@ export const cancelOrder = async (req: Request, res: Response): Promise<void> =>
     }
 
     const order = await Order.findById(id);
-
     if (!order) {
       sendError(res, 404, "Đơn hàng không tồn tại");
       return;
@@ -442,16 +441,21 @@ export const cancelOrder = async (req: Request, res: Response): Promise<void> =>
       return;
     }
 
-    // Check if order can be cancelled
+    // Check status
     if (!["pending", "confirmed"].includes(order.order_status)) {
-      sendError(res, 400, `Không thể hủy đơn hàng với trạng thái ${order.order_status}`);
+       sendError(
+        res,
+        400,
+        `Không thể hủy đơn hàng với trạng thái ${order.order_status}`
+      );
       return;
     }
 
-    // Update order status
+    // Update order
     order.order_status = "cancelled";
     order.cancelled_at = new Date();
-    order.cancelled_reason = cancelled_reason;
+    order.cancelled_reason =
+      cancelled_reason || "Người dùng hủy đơn";
 
     await order.save();
 
@@ -464,9 +468,16 @@ export const cancelOrder = async (req: Request, res: Response): Promise<void> =>
     });
   } catch (error) {
     console.error("Error in cancelOrder:", error);
-    sendError(res, 500, error instanceof Error ? `Lỗi server: ${error.message}` : "Lỗi server không xác định");
+    sendError(
+      res,
+      500,
+      error instanceof Error
+        ? `Lỗi server: ${error.message}`
+        : "Lỗi server không xác định"
+    );
   }
 };
+
 
 // Get All Orders (Admin) - Danh sách tất cả đơn hàng
 export const getAllOrders = async (req: Request, res: Response): Promise<void> => {
