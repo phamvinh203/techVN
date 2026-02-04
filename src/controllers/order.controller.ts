@@ -131,12 +131,12 @@ export const checkout = async (
     }
 
     const shippingAddressSnapshot = {
-      full_name: address.full_name,
-      phone: address.phone,
-      address: address.address,
-      ward: address.ward,
-      district: address.district,
-      province: address.province,
+      full_name: address.full_name ?? "",
+      phone: address.phone ?? "",
+      address: address.address ?? "",
+      ward: address.ward ?? null,
+      district: address.district ?? null,
+      province: address.province ?? null,
     };
 
     // LẤY CART
@@ -300,8 +300,19 @@ export const createOrder = async (req: Request, res: Response): Promise<void> =>
       user_id: userId,
       order_code: orderCode,
       items: validItems,
-      shipping_address: address._id,
-      payment_method: payment._id,
+      shipping_address: {
+        full_name: address.full_name ?? "",
+        phone: address.phone ?? "",
+        address: address.address ?? "",
+        ward: address.ward ?? null,
+        district: address.district ?? null,
+        province: address.province ?? null,
+      },
+      payment: {
+        method: payment.method,
+        status: payment.status,
+        amount: payment.amount
+      },
       order_status: "pending",
       total_amount: totalAmount,
       shipping_fee: shippingFee,

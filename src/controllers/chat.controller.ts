@@ -44,8 +44,8 @@ export const chat = async (req: Request, res: Response): Promise<void> => {
 
     const updatedMessages: ChatMessage[] = [
       ...history,
-      { role: "user", content: message },
-      { role: "assistant", content: result.reply },
+      { role: "user" as const, content: message },
+      { role: "assistant" as const, content: result.reply },
     ].slice(-MAX_MESSAGES);
 
     await ChatSession.updateOne(
